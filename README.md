@@ -1,3 +1,4 @@
+![Uploading image.png…]()
 # BigaoDB
 
 Este repositório contém duas versões de um banco de dados ultra-simples **BigaoDB**:
