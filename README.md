@@ -3,7 +3,7 @@
 Este repositório contém duas versões de um banco de dados ultra-simples **BigaoDB**:
 
 * **v1**: append-only em arquivo texto, lookup O(N).
-* **v2**: versão com índice em memória persistido em RAM-disk, lookup O(1) após carga inicial.
+* **v2**: daemon em Python com índice em memória, lookup O(1) em execução contínua.
 
 ---
 
@@ -15,10 +15,10 @@ Este repositório contém duas versões de um banco de dados ultra-simples **Big
 
    * [Uso v1](#uso-v1)
    * [Sample com poucos dados](#sample-pequeno)
-4. [BigaoDB v2 (RAM-disk)](#bigaodb-v2-ram-disk)
+4. [BigaoDB v2 (Daemon)](#bigaodb-v2-daemon)
 
-   * [Montar RAM-disk](#montar-ram-disk)
-   * [Uso v2](#uso-v2)
+   * [Iniciar o daemon](#iniciar-o-daemon)
+   * [Cliente CLI](#cliente-cli)
    * [Sample com 50 milhões de registros](#sample-grande)
 5. [Teste de performance](#teste-de-performance)
 
@@ -27,8 +27,9 @@ Este repositório contém duas versões de um banco de dados ultra-simples **Big
 ## Pré-requisitos
 
 * Python 3.6+
-* Linux com suporte a tmpfs
-* `seq`, `awk` (para geração em shell) ou Python para scripts alternativos
+* Linux (para socket Unix)
+* `nc` (netcat) instalado para o cliente CLI
+* `seq`, `awk` (para gerar samples em shell)
 
 ---
 
@@ -43,7 +44,7 @@ Este repositório contém duas versões de um banco de dados ultra-simples **Big
 2. Dê permissão de execução aos scripts:
 
    ```bash
-   chmod +x bigaodb_v1.py bigaodb_v3.py
+   chmod +x bigaodb_v1.py bigaoDB_v2.py bigaodb_cli.sh
    ```
 
 ---
@@ -58,7 +59,7 @@ Versão básica que grava cada par `key,value` em append-only e faz lookup varre
 # Armazenar dados
 ./bigaodb_v1.py set nome Big
 # Recuperar último valor de uma chave
-echo "$(./bigaodb_v1.py get nome)"
+./bigaodb_v1.py get nome
 ```
 
 ### Sample pequeno
@@ -74,50 +75,71 @@ Este arquivo tem 100 registros e 10 chaves distintas.
 
 ---
 
-## BigaoDB v2 (RAM-disk)
+## BigaoDB v2 (Daemon)
 
-Versão avançada que constrói um índice em memória, serializa em disco **em RAM** e faz lookup O(1) nas execuções subsequentes.
+Versão que mantém um índice em memória vivo, exposto via Unix socket, eliminando reloads e garantindo lookup O(1).
 
-### Montar RAM-disk
-
-```bash
-sudo mkdir -p /mnt/ramdisk
-sudo mount -t tmpfs -o size=512M tmpfs /mnt/ramdisk
-export BIGAO_RAMDISK=/mnt/ramdisk
-```
-
-> **Obs.**: ajuste `size=` conforme a memória disponível.
-
-### Uso v2
+### Iniciar o daemon
 
 ```bash
-# Primeira execução: build + dump em RAM
-time ./bigaodb_v2.py get qualquerChave
-# Chamadas seguintes: lookup via RAM-disk
-time ./bigaodb_v2.py get qualquerChave
+# Inicia o daemon escutando em /tmp/bigaodb.sock
+python3 bigaoDB_v2.py --db bigaodb.db --sock /tmp/bigaodb.sock
 ```
 
-O arquivo de índice ficará em `/mnt/ramdisk/bigaodb.db.idx`.
+### Cliente CLI
+
+Use o script cliente para enviar comandos ao daemon:
+
+```bash
+# No shell, sem necessidade de export
+./bigaodb_cli.sh set usuario alice
+./bigaodb_cli.sh get usuario     # → alice
+```
+
+O cliente usa por padrão `/tmp/bigaodb.sock`; para mudar, defina a variável `BIGAO_SOCK` antes:
+
+```bash
+export BIGAO_SOCK=/caminho/outro.sock
+./bigaodb_cli.sh get usuario
+```
 
 ### Sample grande (50 milhões)
 
 Para gerar um arquivo `bigaodb.db` com 50M de registros:
 
 ```bash
-# Usando seq + awk (muito rápido)
+# Usando seq + awk (rápido)
 seq 50000000 | awk '{print "key"$1",value"$1}' > bigaodb.db
 ```
 
-Ou, em Python (pode demorar alguns minutos):
+Ou, em Python:
 
 ```python
+#!/usr/bin/env python3
 DB = "bigaodb.db"
 with open(DB, "w") as f:
     for i in range(1, 50000001):
         f.write(f"key{i},value{i}\n")
 ```
 
-Este arquivo ocupa \~1 GB e serve para demonstrar a diferença de performance entre v1 e v2.
+---
+
+## Teste de performance
+
+1. **Sample pequeno** (100 linhas):
+
+   ```bash
+   time ./bigaodb_v1.py get key5
+   time ./bigaodb_cli.sh get key5
+   ```
+2. **Sample grande** (50 M linhas):
+
+   ```bash
+   time ./bigaodb_v1.py get key49999999  # vários segundos
+   time ./bigaodb_cli.sh get key49999999 # milissegundos, sem reload
+   ```
+
+Compare os tempos para ilustrar o ganho de manter o daemon vivo com índice em RAM.
 
 ---
 
