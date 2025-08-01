@@ -1,3 +1,5 @@
+<img width="1024" height="1536" alt="image" src="https://github.com/user-attachments/assets/5f8df403-76ce-44d1-b1ca-441a51dd657a" />
+
 # BigaoDB
 
 Este repositório contém duas versões de um banco de dados ultra-simples **BigaoDB**:
